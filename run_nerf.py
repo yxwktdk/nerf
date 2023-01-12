@@ -66,6 +66,7 @@ class Runner:
 
     def save(self):
         RS = 64
+        #最初是64
         pts_xyz = torch.zeros((RS, RS, RS, 3))
         for i in tqdm(range(RS)):
             for j in range(RS):
