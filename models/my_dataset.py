@@ -38,7 +38,7 @@ class Dataset:
         super(Dataset, self).__init__()
         print('Load data: Begin')
         self.device = device
-        self.conf = conf
+        self.conf = conf#参数列表
 
         self.data_dir = conf.get_string('data_dir')
         self.render_cameras_name = conf.get_string('render_cameras_name')

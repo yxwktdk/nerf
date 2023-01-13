@@ -65,7 +65,7 @@ class Runner:
                                      **self.conf['model.nerf_renderer'])
 
     def save(self):
-        RS = 64
+        RS = 128
         #最初是64
         pts_xyz = torch.zeros((RS, RS, RS, 3))
         for i in tqdm(range(RS)):
@@ -89,6 +89,7 @@ class Runner:
         images = []
         resolution_level = 4
         n_frames = 90
+        #渲染出90张图片
         for idx in tqdm(range(n_frames)):
             rays_o, rays_d = self.dataset.gen_rays_at(idx, resolution_level=resolution_level)
             H, W, _ = rays_o.shape
@@ -136,7 +137,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--conf', type=str, default='./confs/nerf.conf')
+    parser.add_argument('--conf', type=str, default='confs/nerf.conf')
     #parser.add_argument('--conf', type=str, default='./confs/base.conf')
     parser.add_argument('--mode', type=str, default='render')
     parser.add_argument('--mcube_threshold', type=float, default=0.0)

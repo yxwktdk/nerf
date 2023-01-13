@@ -5,6 +5,8 @@ import numpy as np
 from tqdm import tqdm
 import time
 
+def Valid(a, b, c, RS):
+    return 0 <= a < RS and 0 <= b < RS and 0 <= c < RS
 class CheatNeRF():
     def __init__(self, nerf):
         super(CheatNeRF, self).__init__()
@@ -16,7 +18,7 @@ class CheatNeRF():
 class MyNeRF():
     def __init__(self):
         super(MyNeRF, self).__init__()
-        self.RS = 64
+        self.RS = 128
         RS = self.RS
         #设置分辨率
         self.volume_sigma = torch.zeros((RS, RS, RS))
@@ -42,23 +44,31 @@ class MyNeRF():
         x_time = 0.125 * 2 / RS
         y_time = (1.0 - 0.75) / RS
         z_time = 0.125 * 2 / RS
+
         turn_xyz = pts_xyz
+
         turn_xyz[:, 0] = (turn_xyz[: , 0] + 0.125) / x_time
         turn_xyz[:, 1] = (turn_xyz[:, 1] - 0.75) / y_time
         turn_xyz[:, 2] = (turn_xyz[:, 2] + 0.125) / z_time
+        #turn_xyz are points after scaling and shifting
         turn_xyz = torch.round(turn_xyz)
-        turn_xyz = turn_xyz.int()
-        count = 0
+        turn_xyz = turn_xyz.long()
+        origin = torch.tensor((0,0,0))
         for i in range(N):
-            if turn_xyz[i,0] >= 0 and turn_xyz[i,0] < RS and turn_xyz[i,1] >= 0 and turn_xyz[i,1] < RS and turn_xyz[i,2] >= 0 and turn_xyz[i,2] < RS:
+            turn_xyz[i] = turn_xyz[i]if Valid(turn_xyz[i,0], turn_xyz[i,1], turn_xyz[i,2], RS)else origin
+            #把所有超过范围[0-64,0-64,0-64]的点变成[0,0,0]
+        sigma = self.volume_sigma[turn_xyz[:, 0],turn_xyz[:, 1],turn_xyz[:, 2]]
+        color = self.volume_color[turn_xyz[:, 0],turn_xyz[:, 1],turn_xyz[:, 2]]
+        '''        for i in range(N):
+            if Valid(turn_xyz[i,0], turn_xyz[i,1], turn_xyz[i,2], RS):
                 sigma[i] = self.volume_sigma[turn_xyz[i,0]][turn_xyz[i,1]][turn_xyz[i,2]]
                 color[i] = self.volume_color[turn_xyz[i,0]][turn_xyz[i,1]][turn_xyz[i,2]]
                 count = count + 1
             else:
                 sigma[i] = 0
-                color[i] = torch.tensor([0, 0, 0])
+                color[i] = torch.tensor([0, 0, 0])'''
 
-        print(count)
+
         return sigma, color
 
 
