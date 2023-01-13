@@ -136,11 +136,13 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--conf', type=str, default='./confs/base.conf')
+    parser.add_argument('--conf', type=str, default='./confs/nerf.conf')
+    #parser.add_argument('--conf', type=str, default='./confs/base.conf')
     parser.add_argument('--mode', type=str, default='render')
     parser.add_argument('--mcube_threshold', type=float, default=0.0)
     parser.add_argument('--is_continue', default=False, action="store_true")
-    parser.add_argument('--case', type=str, default='')
+    parser.add_argument('--case', type=str, default='test')
+    #parser.add_argument('--case', type=str, default='')
     parser.add_argument('--dataroot', type=str, default='')
 
     args = parser.parse_args()
