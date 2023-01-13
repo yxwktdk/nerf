@@ -77,14 +77,17 @@ class Runner:
         batch_size = 1024
         sigma = torch.zeros((RS*RS*RS, 1))
         color = torch.zeros((RS*RS*RS, 3))
-        for batch in tqdm(range(0, pts_xyz.shape[0], batch_size)):
-            batch_pts_xyz = pts_xyz[batch:batch+batch_size]
-            net_sigma, net_color = self.fine_nerf(batch_pts_xyz, torch.zeros_like(batch_pts_xyz))
-            sigma[batch:batch+batch_size] = net_sigma
-            color[batch:batch+batch_size] = net_color
-        
-        self.my_nerf.save(pts_xyz, sigma, color)
 
+        checkpoint = torch.load("temp.pth")
+        sigma = checkpoint["volume_sigma"]
+        color = checkpoint["volume_color"]
+
+        self.my_nerf.save(pts_xyz, sigma, color)
+        ''' for batch in tqdm(range(0, pts_xyz.shape[0], batch_size)):
+                    batch_pts_xyz = pts_xyz[batch:batch+batch_size]
+                    net_sigma, net_color = self.fine_nerf(batch_pts_xyz, torch.zeros_like(batch_pts_xyz))
+                    sigma[batch:batch+batch_size] = net_sigma
+                    color[batch:batch+batch_size] = net_color'''
     def render_video(self):
         images = []
         resolution_level = 4
