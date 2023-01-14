@@ -131,6 +131,19 @@ class Runner:
         # for image in tqdm(images):
         #     writer.write(image)
         # writer.release()
+    def mcube(self):
+        mesh = self.my_nerf.mcube(args.mcube_threshold)
+        mesh.export('./exp/mcube/' + 'mcube{}.obj'.format(int(args.mcube_threshold)))
+        '''        for i in range(30):
+            thres = 3 * i - 45
+            mesh = self.my_nerf.mcube(thres)
+            sign =''
+            if thres > 0:
+                sign = '+'
+            elif thres < 0:
+                sign = '-'
+                thres = 0 - thres
+            mesh.export('./exp/mcube/' + sign + 'mcube{}.obj'.format(int(thres)))'''
 
 
 if __name__ == '__main__':
@@ -142,8 +155,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--conf', type=str, default='confs/nerf.conf')
     #parser.add_argument('--conf', type=str, default='./confs/base.conf')
-    parser.add_argument('--mode', type=str, default='render')
-    parser.add_argument('--mcube_threshold', type=float, default=0.0)
+    parser.add_argument('--mode', type=str, default='mcube')
+    #parser.add_argument('--mode', type=str, default='render')
+    parser.add_argument('--mcube_threshold', type=float, default=200.0)
     parser.add_argument('--is_continue', default=False, action="store_true")
     parser.add_argument('--case', type=str, default='test')
     #parser.add_argument('--case', type=str, default='')
@@ -155,6 +169,10 @@ if __name__ == '__main__':
     if args.mode == 'render':
         runner.save()
         runner.render_video()
+    if args.mode == 'mcube':
+        runner.save()
+        runner.mcube()
+
     elif args.mode == 'test':
         runner.use_nerf()
         runner.render_video()

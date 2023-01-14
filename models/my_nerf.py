@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
 import time
+import skimage
+import trimesh
 
 def Valid(a, b, c, RS):
     return 0 <= a < RS and 0 <= b < RS and 0 <= c < RS
@@ -24,17 +26,25 @@ class MyNeRF():
         self.volume_sigma = torch.zeros((RS, RS, RS))
         self.volume_color = torch.zeros((RS, RS, RS, 3))
 
+
     def save(self, pts_xyz, sigma, color):
         #直接reshape之后存储
         RS = self.RS
+
         self.volume_sigma = sigma.reshape((RS, RS, RS))
         self.volume_color = color.reshape((RS, RS, RS, 3))
+
         checkpoint = {
             "volume_sigma": self.volume_sigma,
             "volume_color": self.volume_color
         }
         torch.save(checkpoint, "temp.pth")
-        pass
+
+        '''sigma = sigma.reshape(RS * RS * RS)
+        print(max(sigma))
+        print(min(sigma))
+        for i in range(200):
+            print(sigma[10000 * i])'''
     
     def query(self, pts_xyz):
         N, _ = pts_xyz.shape
@@ -51,4 +61,7 @@ class MyNeRF():
 
         return sigma, color
 
-
+    def mcube(self, thres):
+        vertices, faces, _, _ = skimage.measure.marching_cubes(self.volume_sigma.numpy(), thres)
+        mesh = trimesh.Trimesh(vertices, faces)
+        return mesh
