@@ -35,38 +35,47 @@ class MyNeRFoct():
         # 存储体素数据结构是否还需要往下划分（01）
         self.FSTpars = torch.tensor([[0,0,0]])
         self.SNDpars = torch.tensor([[0, 0, 0]])
-        self.FSTp_num = 0
+
 
     def save(self, sigma, color):
         # 直接reshape之后存储
         RS = self.RS
-        self.tree[:] = torch.cat([color.reshape((RS * RS * RS, 3)),
+        data = torch.cat([color.reshape((RS * RS * RS, 3)),
                                sigma.reshape((RS * RS * RS, 1))],dim=1)
-        self.volume_sigma = torch.zeros((RS, RS, RS))
-        self.volume_color = torch.zeros((RS, RS, RS, 3))
+        pts_xyz = torch.zeros((RS, RS, RS, 3))
+        for i in tqdm(range(RS)):
+            for j in range(RS):
+                pts_xyz[:, i, j, 0] = torch.linspace(-0.125, 0.123, RS)
+                pts_xyz[i, :, j, 1] = torch.linspace(0.75, 0.998, RS)
+                pts_xyz[i, j, :, 2] = torch.linspace(-0.125, 0.123, RS)
+        pts_xyz = pts_xyz.reshape((RS*RS*RS, 3))
+        self.tree[pts_xyz]= data[:]
         self.volume_sigma = sigma
-
         self.volume_color = color
         checkpoint = {
             "volume_sigma": self.volume_sigma,
-            "volume_color": self.volume_color
+            "volume_color": self.volume_color,
         }
         torch.save(checkpoint, "temp.pth")
 
 
     def query(self, pts_xyz):
         N, _ = pts_xyz.shape
-        sigma = torch.zeros(N, 1, device=pts_xyz.device)
-        color = torch.zeros(N, 3, device=pts_xyz.device)
-        # 利用归一化定位具体坐标
-        RS = self.RS
-
+        RS = 128
+        pts_xyz[:, 0].clamp_(-0.125, 0.125)
+        pts_xyz[:, 1].clamp_(0.75, 1.0)
+        pts_xyz[:, 2].clamp_(-0.125, 0.125)
+        res = self.tree[pts_xyz]
+        color = res[:,0:3]
+        sigma = res[:,3]
         X_index = ((pts_xyz[:, 0] + 0.125) * 4 * RS).clamp(0, RS - 1).long()
         Y_index = ((pts_xyz[:, 1] - 0.75) * 4 * RS).clamp(0, RS - 1).long()
         Z_index = ((pts_xyz[:, 2] + 0.125) * 4 * RS).clamp(0, RS - 1).long()
-        sigma[:, 0] = self.volume_sigma[X_index, Y_index, Z_index]
-        color[:, :] = self.volume_color[X_index, Y_index, Z_index]
-
+        sigma_0 = torch.zeros(N, 1, device=pts_xyz.device)
+        color_0 = torch.zeros(N, 3, device=pts_xyz.device)
+        self.tree[0.0976, 0.7734, 0.125]
+        sigma_0[:, 0] = self.volume_sigma[X_index, Y_index, Z_index]
+        color_0[:, :] = self.volume_color[X_index, Y_index, Z_index]
         return sigma, color
 
     def mcube(self, thres):
@@ -87,11 +96,11 @@ class MyNeRFoct():
         """
         depth = 0
         r = radius
-        for i in range(10):
+        '''for i in range(10):
             if r != 0.25:
                 r*=2
-                depth+=1
-        for vertex_o in tqdm(vertices_o[1:]):
+                depth+=1'''
+        for vertex_o in tqdm(vertices_o):
             pts_xyz = torch.tensor([[[[vertex_o[0], vertex_o[1], vertex_o[2]], [vertex_o[0], vertex_o[1], vertex_o[2] + radius]],
                                      [[vertex_o[0], vertex_o[1] + radius, vertex_o[2]],
                                       [vertex_o[0], vertex_o[1] + radius, vertex_o[2] + radius]]],
@@ -103,19 +112,19 @@ class MyNeRFoct():
 
             sigma, color = model(pts_xyz, torch.zeros_like(pts_xyz))
             self.tree[pts_xyz] = torch.cat([color, sigma], dim=1)#更新叶子结点数据
-            if thres > max(sigma) or thres < min(sigma):
-                continue
+
             if not last_refine:
+                if thres > max(sigma) or thres < min(sigma):
+                    continue
                 vertices, _, _, _ = skimage.measure.marching_cubes(sigma.reshape((2, 2, 2)).numpy(), thres)
                 vertices = np.around(vertices)
 
-                vertices[:, 0] = vertices[:, 0] * radius + vertex_o[0]
-                vertices[:, 1] = vertices[:, 1] * radius + vertex_o[1]
-                vertices[:, 2] = vertices[:, 2] * radius + vertex_o[2]
+                vertices[:, 0] = vertices[:, 0] * radius + vertex_o[0].item()
+                vertices[:, 1] = vertices[:, 1] * radius + vertex_o[1].item()
+                vertices[:, 2] = vertices[:, 2] * radius + vertex_o[2].item()
                 for vertex in vertices:
                     if self.tree[vertex[0], vertex[1], vertex[2]].depths == depth - 1:
                         # 表示还没有被refine
-                        self.FSTp_num += 1
                         self.tree[vertex[0], vertex[1], vertex[2]].refine()
                         vertex = np.ascontiguousarray(vertex)
                         self.SNDpars = torch.cat((self.SNDpars, torch.tensor(vertex).reshape(1, 3)), dim=0)
@@ -138,18 +147,15 @@ class MyNeRFoct():
         vertices[:, 0] = vertices[:, 0] / (RS * 4) - 0.125
         vertices[:, 1] = vertices[:, 1] / (RS * 4) + 0.75
         vertices[:, 2] = vertices[:, 2] / (RS * 4) - 0.125
-
+        vertices = np.unique(vertices, axis = 0)#去重
+        self.FSTpars = vertices
+        num=0
         for vertex in tqdm(vertices):
             # 遍历所有的顶点，将顶点所在的体素数据结构做好标记
             #为了减少标记点，或许可以把临近点只标注一个？
-            if self.FSTp_num == 100:
-                return self.FSTpars#调试过程中
-            if self.tree[vertex[0], vertex[1], vertex[2]].depths == 6:
-                #表示还没有被refine
-                self.FSTp_num+=1
-                self.tree[vertex[0], vertex[1], vertex[2]].refine()
-                vertex = np.ascontiguousarray(vertex)
-                self.FSTpars = torch.cat((self.FSTpars, torch.tensor(vertex).reshape(1,3)),dim=0)
-
+            num+=1
+            self.tree[vertex[0], vertex[1], vertex[2]].refine()
+            if num==100:
+                break
         return self.FSTpars
 

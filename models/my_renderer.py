@@ -115,3 +115,69 @@ class MyNerfRenderer:
             'coarse_weights': coarse_weights,
             'z_vals': z_vals,
         }
+
+    def render_oct(self, rays_o, rays_d, near, far, background_rgb=None):
+        batch_size = len(rays_o)
+        sample_dist = 2.0 / self.n_samples  # Assuming the region of interest is a unit sphere
+        z_vals = torch.linspace(0.0, 1.0, self.n_samples, device=rays_o.device)
+        z_vals = near + (far - near) * z_vals[None, :]
+
+        n_samples = self.n_samples
+        perturb = self.perturb
+
+        if perturb > 0:
+            t_rand = (torch.rand([batch_size, 1], device=rays_o.device) - 0.5)
+            z_vals = z_vals + t_rand * 2.0 / self.n_samples
+
+        # Up sample
+        if self.n_importance > 0:
+            pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]
+            dirs = rays_d[:, None, :].expand(pts.shape)
+            pts = pts.reshape(-1, 3)
+            dirs = dirs.reshape(-1, 3)
+
+            sigma, sampled_color = self.my_nerf.query(pts)
+            sigma = sigma.reshape(batch_size, n_samples)
+            sampled_color = sampled_color.reshape(batch_size, n_samples, 3)
+
+            dists = z_vals[..., 1:] - z_vals[..., :-1]
+            dists = torch.cat([dists, torch.Tensor([1 / 128]).expand(dists[..., :1].shape).to(rays_o.device)], -1)
+            alpha = 1.0 - torch.exp(-F.softplus(sigma.reshape(batch_size, n_samples)) * dists)
+            coarse_weights = alpha * torch.cumprod(
+                torch.cat([torch.ones([batch_size, 1], device=rays_o.device), 1. - alpha + 1e-7], -1), -1)[:, :-1]
+            coarse_color = (sampled_color * coarse_weights[:, :, None]).sum(dim=1)
+            if background_rgb is not None:
+                coarse_color = coarse_color + background_rgb * (1.0 - coarse_weights.sum(dim=-1, keepdim=True))
+
+            with torch.no_grad():
+                new_z_vals = sample_pdf(z_vals, coarse_weights, self.n_importance, det=True).detach()
+            z_vals = torch.cat([z_vals, new_z_vals], dim=-1)
+            z_vals, index = torch.sort(z_vals, dim=-1)
+
+            n_samples = self.n_samples + self.n_importance
+            pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]
+            dirs = rays_d[:, None, :].expand(pts.shape)
+            pts = pts.reshape(-1, 3)
+            dirs = dirs.reshape(-1, 3)
+
+            #query函数调用
+            sigma, sampled_color = self.my_nerf.query(pts)
+            sigma = sigma.reshape(batch_size, n_samples)
+            sampled_color = sampled_color.reshape(batch_size, n_samples, 3)
+
+            dists = z_vals[..., 1:] - z_vals[..., :-1]
+            dists = torch.cat([dists, torch.Tensor([1 / 128]).expand(dists[..., :1].shape).to(rays_o.device)], -1)
+            alpha = 1.0 - torch.exp(-F.softplus(sigma.reshape(batch_size, n_samples)) * dists)
+            fine_weights = alpha * torch.cumprod(
+                torch.cat([torch.ones([batch_size, 1], device=rays_o.device), 1. - alpha + 1e-7], -1), -1)[:, :-1]
+            fine_color = (sampled_color * fine_weights[:, :, None]).sum(dim=1)
+            if background_rgb is not None:
+                fine_color = fine_color + background_rgb * (1.0 - fine_weights.sum(dim=-1, keepdim=True))
+
+        return {
+            'fine_color': fine_color,
+            'coarse_color': coarse_color,
+            'fine_weights': fine_weights,
+            'coarse_weights': coarse_weights,
+            'z_vals': z_vals,
+        }

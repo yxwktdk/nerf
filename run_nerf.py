@@ -15,7 +15,7 @@ from models.my_dataset import Dataset
 from models.my_nerf import MyNeRF, CheatNeRF
 from models.my_renderer import MyNerfRenderer
 from models.my_nerf_octree import MyNeRFoct
-
+import svox
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
@@ -49,8 +49,13 @@ class Runner:
         self.fine_nerf = NeRF(**self.conf['model.fine_nerf']).to(self.device)
         self.my_nerf = MyNeRF()
         self.my_nerf_oct = MyNeRFoct()
-        self.renderer = MyNerfRenderer(self.my_nerf,
-                                       **self.conf['model.nerf_renderer'])
+        if args.mode == 'oct':
+            self.renderer = MyNerfRenderer(self.my_nerf_oct,
+                                           **self.conf['model.nerf_renderer'])
+        else:
+            self.renderer = MyNerfRenderer(self.my_nerf,
+                                           **self.conf['model.nerf_renderer'])
+
         self.load_checkpoint(r'D:\sophomore\algorithm\NeRF\NeRF\nerf_model.pth', absolute=True)
 
     def load_checkpoint(self, checkpoint_name, absolute=False):
@@ -75,8 +80,16 @@ class Runner:
         color = checkpoint["volume_color"]
         self.my_nerf_oct.save(sigma, color)
         FSTpars = self.my_nerf_oct.FSTLayer(args.mcube_threshold)
+        '''checkpoint = {
+            "tree":self.my_nerf_oct.tree
+        }
+        torch.save(checkpoint, "FSTtree.pth")'''
         SNDpars = self.my_nerf_oct.CheckVertex(FSTpars[1:], 0.25 / (RS * 2), args.mcube_threshold, self.fine_nerf)
         self.my_nerf_oct.CheckVertex(SNDpars[1:],0.25 / (RS * 4),args.mcube_threshold, self.fine_nerf,True)
+        checkpoint = {
+            "tree": self.my_nerf_oct.tree
+        }
+        torch.save(checkpoint, "tree.pth")
 
     def render_oct(self):
         images = []
@@ -96,7 +109,7 @@ class Runner:
                 near, far = self.dataset.near_far_from_sphere(rays_o_batch, rays_d_batch)
                 background_rgb = torch.ones([1, 3], device=self.device) if self.use_white_bkgd else None
 
-                render_out = self.renderer.render(rays_o_batch,
+                render_out = self.renderer.render_oct(rays_o_batch,
                                                   rays_d_batch,
                                                   near,
                                                   far,
@@ -113,9 +126,48 @@ class Runner:
             img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3]) * 256).clip(0, 255)
             img_fine = cv.resize(cv.flip(img_fine, 0), (512, 512))
             images.append(img_fine)
-            os.makedirs('./exp/test/render', exist_ok=True)
-            #os.makedirs(os.path.join(self.base_exp_dir, 'render'), exist_ok=True)
-            cv.imwrite(os.path.join(self.base_exp_dir, 'render', '{}.jpg'.format(idx)), img_fine)
+            os.makedirs(os.path.join(self.base_exp_dir, 'render_oct'), exist_ok=True)
+            cv.imwrite(os.path.join(self.base_exp_dir, 'render_oct', '{}.jpg'.format(idx)), img_fine)
+        '''for idx in tqdm(range(n_frames)):
+            ren = svox.VolumeRenderer(self.my_nerf_oct.tree)
+            rays_o, rays_d = self.dataset.gen_rays_at(idx, resolution_level=resolution_level)
+            H, W, _ = rays_o.shape
+
+            #rays_o = rays_o.reshape(-1, 3).split(1024)
+            #rays_d = rays_d.reshape(-1, 3).split(1024)
+            rays_o = rays_o.reshape(-1, 3)
+            rays_d = rays_d.reshape(-1, 3)
+            rays_v = torch.nn.functional.normalize(rays_d, dim=1)
+            ray = svox.Rays(origins=rays_o, dirs=rays_d,
+                            viewdirs=rays_v)
+            render_out = ren(ray)
+            out_rgb_fine = []
+            out_rgb_fine.append(render_out.detach().cpu().numpy())
+            img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3]) * 256).clip(0, 255)
+            img_fine = cv.resize(cv.flip(img_fine, 0), (512, 512))
+            images.append(img_fine)
+
+            os.makedirs(os.path.join(self.base_exp_dir, 'render_oct'), exist_ok=True)
+            cv.imwrite(os.path.join(self.base_exp_dir, 'render_oct', '{}.jpg'.format(idx)), img_fine)
+
+            for rays_o_batch, rays_d_batch in tqdm(zip(rays_o, rays_d)):
+            #for rays_o_batch, rays_d_batch in zip(rays_o, rays_d):
+                #near, far = self.dataset.near_far_from_sphere(rays_o_batch, rays_d_batch)
+               # background_rgb = torch.ones([1, 3], device=self.device) if self.use_white_bkgd else None
+
+                #render_out = self.renderer.render(rays_o_batch,rays_d_batch, near, far,background_rgb=background_rgb)
+                ray = svox.Rays(origins=rays_o_batch, dirs = rays_d_batch, viewdirs = torch.nn.functional.normalize(rays_d_batch,dim = 1))
+                render_out = ren(ray)
+                out_rgb_fine.append(render_out.detach().cpu().numpy())
+
+                del render_out
+
+            img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3]) * 256).clip(0, 255)
+            img_fine = cv.resize(cv.flip(img_fine, 0), (512, 512))
+            images.append(img_fine)
+
+            os.makedirs(os.path.join(self.base_exp_dir, 'render_oct'), exist_ok=True)
+            cv.imwrite(os.path.join(self.base_exp_dir, 'render_oct', '{}.jpg'.format(idx)), img_fine)'''
 
     def save(self):
         RS = 128
@@ -172,7 +224,6 @@ class Runner:
             img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3]) * 256).clip(0, 255)
             img_fine = cv.resize(cv.flip(img_fine, 0), (512, 512))
             images.append(img_fine)
-            print(os.path.join(self.base_exp_dir, 'render'))
             os.makedirs(os.path.join(self.base_exp_dir, 'render'), exist_ok=True)
             cv.imwrite(os.path.join(self.base_exp_dir, 'render', '{}.jpg'.format(idx)), img_fine)
 
@@ -213,7 +264,7 @@ if __name__ == '__main__':
     parser.add_argument('--conf', type=str, default='confs/nerf.conf')
     # parser.add_argument('--conf', type=str, default='./confs/base.conf')
     parser.add_argument('--mode', type=str, default='oct')
-    # parser.add_argument('--mode', type=str, default='render')
+    #parser.add_argument('--mode', type=str, default='render')
     parser.add_argument('--mcube_threshold', type=float, default=0.0)
     parser.add_argument('--is_continue', default=False, action="store_true")
     parser.add_argument('--case', type=str, default='test')
